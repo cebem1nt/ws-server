@@ -11,8 +11,10 @@
 #include "include/frames.h"
 #include "include/structs.h"
 #include "include/structs.h"
-#include "include/http_p.h"
 #include "include/crypt.h"
+
+#define HTTPP_IMPLEMENTATION
+#include "include/httpp.h"
 
 #define PORT 8080
 #define LISTEN_BACKLOG 10
@@ -78,7 +80,8 @@ handle_websocket(int client_sfd, char** client_room, char* msg_raw,
     if (message[0] != '{') {
         *client_room = get_room_id(message);
         rooms_hmap_append_client(rhm, *client_room, client_sfd);
-    } 
+    }
+    
     else if (*client_room) { // It is json message, broadcast it to anyone in the same room
         int* clients_in_room = rooms_hmap_get(rhm, *client_room);
 
@@ -103,27 +106,30 @@ handle_websocket(int client_sfd, char** client_room, char* msg_raw,
  * respones if request is fine, otherwise null
  */
 char*
-handshake(char* request_raw)
+handshake(char* request_raw, size_t n, size_t* response_len)
 {
-    struct http_request req = http_parse_request(request_raw);
-    const char* req_key = http_get_header_value(req, "Sec-WebSocket-Key");
+    HTTPP_NEW_REQ(req, 100);
+    httpp_parse_request(request_raw, n, &req);
 
-    if (strcmp(req.method, "GET") != 0 || req_key == NULL) {
-        http_destroy_request(req);
+    httpp_header_t* key_header = httpp_find_header(req, "Sec-WebSocket-Key");
+
+    if (req.method != HTTPP_METHOD_GET || key_header == NULL)
         return NULL; // Invalid request. We aint handle normal http. 
-    }
 
-    const char* signed_key = sign_key(req_key);
-    struct http_response res = http_new_response(SWITCHING_PROTOCOL);
+    char* key = httpp_span_to_str(&key_header->value);
+    char* signed_key = sign_key(key);
 
-    http_response_append_header(&res, "Upgrade", "websocket");
-    http_response_append_header(&res, "Connection", "Upgrade");
-    http_response_append_header(&res, "Sec-WebSocket-Accept", signed_key);
+    HTTPP_NEW_RES(res, 5, 101); // Switching protocols
 
-    char* out = http_compose_response(res);
-    
-    http_destroy_request(req);
-    http_destroy_response(res);
+    httpp_res_add_header(&res, "Upgrade", "websocket");
+    httpp_res_add_header(&res, "Connection", "Upgrade");
+    httpp_res_add_header(&res, "Sec-WebSocket-Accept", signed_key);
+
+    char* out = httpp_res_to_raw(&res, response_len);
+
+    free(key);
+    free(signed_key);
+    httpp_res_free_added(&res);
     return out;
 }
 
@@ -141,6 +147,7 @@ hadle_client(void* arg_v)
 
     while ((n = read(client_sfd, buf, MAX_MSG_SIZE)) > 0 ) {
         printf("Message from (%i), size: %zd\n", client_sfd, n);
+
         if (client_room) {
             printf("\t(%i) room: %s\n", client_sfd, client_room);
         } else {
@@ -150,7 +157,7 @@ hadle_client(void* arg_v)
         pthread_mutex_lock(&maps_mutex);
         bool is_recognized = clients_hset_has(chs, client_sfd);
         pthread_mutex_unlock(&maps_mutex);
-
+        
         /* 
          * If we dont have mapped socket fd, then assume incoming request
          * is webrtc handshake. If its not, but we already handshaked, 
@@ -159,17 +166,19 @@ hadle_client(void* arg_v)
         if (!is_recognized) {
             printf("\t(%i) is not recognized, handshake\n", client_sfd);
 
-            char* response_raw = handshake(buf);
-            if (!response_raw)
+            size_t response_len;
+            char*  response = handshake(buf, n, &response_len);
+
+            if (!response)
                 break;
             
-            write(client_sfd, response_raw, strlen(response_raw));
+            write(client_sfd, response, response_len);
 
             pthread_mutex_lock(&maps_mutex);
             clients_hset_set(chs, client_sfd);
             pthread_mutex_unlock(&maps_mutex);
 
-            free(response_raw);
+            free(response);
         }
 
         else if (is_recognized) {
