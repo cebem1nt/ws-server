@@ -657,11 +657,8 @@ char* httpp_res_to_raw(httpp_res_t* res, size_t* out_len)
                   + HTTPP_DELIMITER_LEN;
     }
 
-    if (res->body.length) {
-        out_size += HTTPP_DELIMITER_LEN;
-        out_size += res->body.length;
-    }
-
+    out_size += HTTPP_DELIMITER_LEN;
+    out_size += res->body.length;
     out_size += 1; // '\0'
 
     char* out = (char*) malloc(out_size);
@@ -692,8 +689,10 @@ char* httpp_res_to_raw(httpp_res_t* res, size_t* out_len)
         offset += n;
     }
 
-    if (res->body.length) {    
-        char* end = out + offset;
+    strcat(out, HTTPP_DELIMITER);
+
+    if (res->body.length) {
+        char* end = out + offset + HTTPP_DELIMITER_LEN;
         SETSTR(end, res->body.ptr, res->body.length);
     }
 
