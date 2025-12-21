@@ -128,13 +128,13 @@ const char* httpp_method_to_string(int method);
 const char* httpp_status_to_string(int status_code);
 
 // Converts httpp_span_t to a malloc'd string. Caller must free 
-char* httpp_span_to_str(httpp_span_t* span);
+char* httpp_span_to_str(httpp_span_t span);
 
 // Checks is httpp_span_t equal to `to` 
-bool httpp_span_eq(httpp_span_t* span, const char* to);
+bool httpp_span_eq(httpp_span_t span, const char* to);
 
 // Checks is httpp_span_t equal to `to` without case considering
-bool httpp_span_case_eq(httpp_span_t* span, const char* to);
+bool httpp_span_case_eq(httpp_span_t span, const char* to);
 
 /*
  * Parses the raw http request passed as `buf`. 
@@ -187,15 +187,13 @@ void httpp_res_free_added(httpp_res_t* res);
 #define httpp_res_set_body(res, body_ptr, body_len) \
    (res.body = (httpp_span_t){body_ptr, body_len, false})
 
-#define HTTPP_NEW_REQ(name, arr_cap) \
+#define HTTPP_NEW_REQ(name) \
     httpp_req_t name; \
-    httpp_header_t name##_headers[arr_cap]; \
-    httpp_init_req(&name, name##_headers, arr_cap)
+    httpp_init_req(&name, HTTPP_DEFAULT_HEADERS_ARR_CAP)
 
-#define HTTPP_NEW_RES(name, arr_cap, status) \
+#define HTTPP_NEW_RES(name, status) \
     httpp_res_t name; \
-    httpp_header_t name##_headers[arr_cap]; \
-    httpp_init_res(&name, name##_headers, arr_cap, status)
+    httpp_init_res(&name, HTTPP_DEFAULT_HEADERS_ARR_CAP, status)
 
 static inline void httpp_init_span(httpp_span_t* span) 
 {
@@ -205,25 +203,26 @@ static inline void httpp_init_span(httpp_span_t* span)
 }
 
 static inline void httpp_init_req(
-    httpp_req_t* dest, httpp_header_t* headers_arr, size_t headers_capacity)
+    httpp_req_t* dest, size_t headers_capacity)
 {
     httpp_init_span(&dest->route);
     httpp_init_span(&dest->body);
 
-    dest->headers.arr = headers_arr;
     dest->headers.capacity = headers_capacity;
     dest->headers.length = 0;
+    dest->headers.arr = (httpp_header_t*) malloc(sizeof(httpp_header_t) * headers_capacity);
 }
 
 static inline void httpp_init_res(
-    httpp_res_t* dest, httpp_header_t* headers_arr, size_t headers_capacity, int status_code)
+    httpp_res_t* dest, size_t headers_capacity, int status_code)
 {
     dest->code = status_code;
-    dest->headers.arr = headers_arr;
     dest->headers.capacity = headers_capacity;
     dest->headers.length = 0;
+    dest->headers.arr = (httpp_header_t*) malloc(sizeof(httpp_header_t) * headers_capacity);
 }
 
+#define HTTPP_IMPLEMENTATION
 #ifdef HTTPP_IMPLEMENTATION
 
 // Originial isspace is kinda slow...
@@ -365,50 +364,63 @@ const char* httpp_status_to_string(int status_code)
     }
 }
 
-char* httpp_span_to_str(httpp_span_t* span)
+char* httpp_span_to_str(httpp_span_t span)
 {
-    char* out = (char*) malloc(span->length + 1);
+    char* out = (char*) malloc(span.length + 1);
 
     if (!out)
         return NULL;
     
-    SETSTR(out, span->ptr, span->length);
+    SETSTR(out, span.ptr, span.length);
     return out;
 }
 
-bool httpp_span_eq(httpp_span_t* span, const char* to)
+bool httpp_span_eq(httpp_span_t span, const char* to)
 {
-    if (!span || !span->ptr || to == NULL) 
+    if (!span.ptr || to == NULL) 
         return false;
     
     size_t expected = strlen(to);
 
-    if (span->length != expected) 
+    if (span.length != expected) 
         return false;
 
-    return (strncmp(span->ptr, to, expected) == 0);
+    return (strncmp(span.ptr, to, expected) == 0);
 }
 
-bool httpp_span_case_eq(httpp_span_t* span, const char* to) 
+bool httpp_span_case_eq(httpp_span_t span, const char* to) 
 {
-    if (!span || !span->ptr || to == NULL) 
+    if (!span.ptr || to == NULL) 
         return false;
     
     size_t expected = strlen(to);
 
-    if (span->length != expected) 
+    if (span.length != expected) 
         return false;
 
-    return (strncasecmp(span->ptr, to, expected) == 0);
+    return (strncasecmp(span.ptr, to, expected) == 0);
 }
 
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header)
 {
-    if (hs->length >= hs->capacity)
-        return NULL; // Array is full
-
     if (!header.name.ptr || !header.value.ptr) 
         return NULL; // Value is empty
+
+    if (hs->length >= hs->capacity) {
+        size_t new_cap = hs->capacity ? hs->capacity * 2 : 4; 
+        
+        if (new_cap < hs->capacity)
+            return NULL;
+
+        httpp_header_t* tmp = (httpp_header_t*) realloc(hs->arr, sizeof(httpp_header_t) * new_cap);
+
+        if (!tmp) 
+            return NULL;
+
+        hs->arr = tmp;
+        hs->capacity = new_cap;
+    }
+
 
     hs->arr[hs->length++] = header;
     return &hs->arr[hs->length - 1];
@@ -606,8 +618,8 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
             return -1;
 
 #ifdef HTTPP_CONSIDER_CONTENT_LENGTH
-        if (httpp_span_case_eq(&parsed->name, "content-length")) {
-            char* val = httpp_span_to_str(&parsed->value);
+        if (httpp_span_case_eq(parsed->name, "content-length")) {
+            char* val = httpp_span_to_str(parsed->value);
             content_len = atol(val);
             free(val);
         }

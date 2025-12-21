@@ -108,7 +108,7 @@ handle_websocket(int client_sfd, char** client_room, char* msg_raw,
 char*
 handshake(char* request_raw, size_t n, size_t* response_len)
 {
-    HTTPP_NEW_REQ(req, 100);
+    HTTPP_NEW_REQ(req);
     httpp_parse_request(request_raw, n, &req);
 
     httpp_header_t* key_header = httpp_find_header(req, "Sec-WebSocket-Key");
@@ -116,10 +116,10 @@ handshake(char* request_raw, size_t n, size_t* response_len)
     if (req.method != HTTPP_METHOD_GET || key_header == NULL)
         return NULL; // Invalid request. We aint handle normal http. 
 
-    char* key = httpp_span_to_str(&key_header->value);
+    char* key = httpp_span_to_str(key_header->value);
     char* signed_key = sign_key(key);
 
-    HTTPP_NEW_RES(res, 5, 101); // Switching protocols
+    HTTPP_NEW_RES(res, 101); // Switching protocols
 
     httpp_res_add_header(&res, "Upgrade", "websocket");
     httpp_res_add_header(&res, "Connection", "Upgrade");
