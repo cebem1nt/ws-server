@@ -222,7 +222,6 @@ static inline void httpp_init_res(
     dest->headers.arr = (httpp_header_t*) malloc(sizeof(httpp_header_t) * headers_capacity);
 }
 
-#define HTTPP_IMPLEMENTATION
 #ifdef HTTPP_IMPLEMENTATION
 
 // Originial isspace is kinda slow...

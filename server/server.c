@@ -20,6 +20,16 @@
 #define LISTEN_BACKLOG 10
 #define MAX_MSG_SIZE 2048
 
+#define error_exit(...) do {                \
+    fprintf(stderr, __VA_ARGS__);           \
+    exit(1);                                \
+} while(0)
+
+#define perror_exit(msg) do  {              \
+    perror(msg);                            \
+    exit(1);                                \
+} while(0)
+
 typedef struct {
     int client_sfd;
     clients_hset chs;
@@ -33,13 +43,6 @@ static pthread_mutex_t maps_mutex = PTHREAD_MUTEX_INITIALIZER;
  *           ip(7), bind(2), accept(2), htonl
  *
  */
-
-void 
-err_exit(const char* reason) 
-{
-    perror(reason);
-    exit(EXIT_FAILURE);
-}
 
 char*
 get_room_id(char* msg) 
@@ -61,10 +64,8 @@ handle_websocket(int client_sfd, char** client_room, char* msg_raw,
     struct ws_in_frame  inf;
     struct ws_out_frame outf;
 
-    if (ws_parse_frame(umsg_raw, msg_size, &inf)) {
-        printf("Error when parsing ws frame.\n");
-        return 1;
-    }
+    if (ws_parse_frame(umsg_raw, msg_size, &inf))
+        error_exit("Error when parsing ws frame.\n");
 
     char* message = (char*) inf.payload;
 
@@ -218,7 +219,7 @@ main()
 
     server_sfd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sfd == -1)
-        err_exit("socket");
+        perror_exit("socket");
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -228,10 +229,10 @@ main()
     setsockopt(server_sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     if (bind(server_sfd, (struct sockaddr*) &server_addr, sizeof(server_addr)) == -1)
-        err_exit("bind");
+        perror_exit("bind");
 
     if (listen(server_sfd, LISTEN_BACKLOG) == -1)
-        err_exit("listen");
+        perror_exit("listen");
 
     // Listen for any connections
     printf("Server is listening\n");
@@ -241,14 +242,14 @@ main()
 
         client_sfd = accept(server_sfd, &client_addr, &client_addr_s);
         if (client_sfd == -1)
-            err_exit("accept");
+            perror_exit("accept");
         
         printf("Client (%i) accepted\n\n", client_sfd);
 
         pthread_t tid;
         thread_arg_t* targ = (thread_arg_t*) malloc(sizeof(thread_arg_t));
         if (!targ)
-            err_exit("malloc");
+            perror_exit("malloc");
 
         targ->client_sfd = client_sfd;
         targ->chs = chs;
@@ -259,7 +260,7 @@ main()
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
         if (pthread_create(&tid, &attr, hadle_client, targ) != 0)
-            err_exit("pthread_create");
+            perror_exit("pthread_create");
 
         pthread_attr_destroy(&attr);
     }
