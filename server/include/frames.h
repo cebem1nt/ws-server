@@ -11,6 +11,8 @@
 #define WSOP_TEXT     0x1
 #define WSOP_BINARY   0x2
 #define WSOP_EXIT     0x8
+#define WSOP_PING     0x9
+#define WSOP_PONG     0xA
 
 // RSV1, RSV2, RSV3: will be ignored.
 struct ws_in_frame {
@@ -36,6 +38,7 @@ int ws_parse_frame(unsigned char* buf, size_t buf_size, struct ws_in_frame* dest
  * Takes in raw data buffer and writes it to dest.
  * Out frame has 0x1 opcode and fin set to 1
  */
-int ws_to_frame(unsigned char* buf, size_t buf_size, struct ws_out_frame* dest);
+int ws_to_frame(unsigned char* buf, size_t buf_size, 
+                struct ws_out_frame* dest, int opcode);
 
 #endif

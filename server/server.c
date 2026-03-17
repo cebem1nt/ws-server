@@ -67,30 +67,37 @@ handle_websocket(int client_sfd, char** client_room, char* msg_raw,
     if (ws_parse_frame(umsg_raw, msg_size, &inf))
         error_exit("Error when parsing ws frame.\n");
 
-    char* message = (char*) inf.payload;
-
     switch (inf.opcode) {
     case WSOP_TEXT:
         break; // This is text, we can proceed it
 
-    case WSOP_EXIT:
-    default:
+    case WSOP_PING:
+        ws_to_frame(inf.payload, inf.payload_len, &outf, WSOP_PONG);
+        write(client_sfd, outf.payload, outf.payload_len);
+        return 0;
+
+    case WSOP_EXIT: 
         return 1;
+    
+    default: // We might get WSOP_PONG or something else just ignore it 
+        return 0;
     }
+
+    char* message = (char*) inf.payload;
 
     if (message[0] != '{') {
         *client_room = get_room_id(message);
         rooms_hmap_append_client(rhm, *client_room, client_sfd);
     }
     
-    else if (*client_room) { // It is json message, broadcast it to anyone in the same room
+    else if (*client_room) { // It is a json message, broadcast it to anyone in the same room
         int* clients_in_room = rooms_hmap_get(rhm, *client_room);
 
         for (int i = 0; i < MAX_CLIENTS_PER_ROOM; i++) {
             int client = clients_in_room[i];
 
             if (client != -1 && client != client_sfd) {
-                ws_to_frame(inf.payload, inf.payload_len, &outf);
+                ws_to_frame(inf.payload, inf.payload_len, &outf, WSOP_TEXT);
                 write(client, outf.payload, outf.payload_len);
             }
         } 

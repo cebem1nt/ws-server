@@ -27,9 +27,10 @@
 |                     Payload Data continued ...                |
 +---------------------------------------------------------------+
 */
-int ws_to_frame(unsigned char* buf, size_t buf_size, struct ws_out_frame* out) 
+int ws_to_frame(unsigned char* buf, size_t buf_size, 
+                struct ws_out_frame* out, int opcode) 
 {
-    const uint8_t fin_opcode = 0x80 | 0x1; // FIN=1, opcode=1 (text)
+    const uint8_t fin_opcode = 0x80 | opcode;
     uint64_t payload_len = buf_size;
 
     size_t header_len = 2; // base header
